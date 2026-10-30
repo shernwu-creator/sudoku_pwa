@@ -120,6 +120,9 @@ sudoku_pwa/
 
 - **Mobile-First**：手機（375×667 起）滿版、不需橫向捲動；桌機置中並限制最大寬度
   （約 520–560px）。使用 `100dvh` 與 `pt-safe` / `pb-safe` 處理瀏海與 Home Indicator。
+- **棋盤視覺**：題目數字用**黑色粗體**（`text-black font-bold`）、玩家填入用**紅色**
+  （`text-red-600`），兩者對比要一眼可辨；棋盤內線**一律 1px**，3×3 宮界線只用較深的
+  顏色（`slate-500` vs `slate-300`）區隔，不要用 1px／2px 混搭造成粗細不一；外框才用 2px。
 - **樣式**：只用 Tailwind utility；動態合併 class 一律用 `cn()`（`clsx` + `tailwind-merge`）。
   不新增第二套 CSS 架構；品牌色用 `brand-*`，勿硬編碼色碼（圖示腳本除外）。
 - **元件分割**：`App.jsx` 只負責組合與全域事件；棋盤渲染歸 `Board.jsx`；
@@ -134,9 +137,14 @@ sudoku_pwa/
 - **子路徑**：不要硬編碼 `/` 開頭的資源路徑；用 `import.meta.env.BASE_URL` 或 Vite 的
   相對資源處理。測試 PWA 請用 `npm run preview`（預設掛在 `/sudoku_pwa/`）。
 - **本機儲存**：key 一律以 `sudoku:v1:` 開頭；讀取時 try/catch，格式錯誤就丢棄重來；
-  schema 變更時提升版本號，不要讓舊資料弄壞新版本。
-- **每日挑戰**：以**本地日期** `YYYY-MM-DD` 產生 seed（例如 `daily-2026-10-30`）；
-  同一天、同一難度在任何裝置都必須是同一題。新遊戲則使用隨機 seed。
+  schema 變更時提升 `STORAGE_VERSION`（目前 `2`），不要讓舊資料弄壞新版本。
+- **每日挑戰**：以**本地日期** `YYYY-MM-DD` 產生 seed（例如 `daily-2026-10-30`），
+  於 `generateGame` 再串上難度（`<seed>:difficulty-N`）。因此同一天三個難度各自不同題，
+  但同一天、同一難度在任何裝置都必須是同一題；新遊戲使用隨機 seed，每次點擊都不同。
+  跨午夜時若使用者停在每日挑戰，回到前景／每分鐘檢查會自動換成新的一天題目。
+- **PWA 身分**：manifest `id` 必須是全站唯一（本專案 `id` = `<base>?app=sudoku-pwa`，
+  `scope` = `<base>`）。同一個 GitHub Pages 網域下會掛多個遊戲，若 `id`／`scope`
+  與其他 App 重複，瀏覽器會視為同一個 App，造成無法各自安裝；修改 `base` 時要同步確認。
 - **無障礙與動效**：尊重 `prefers-reduced-motion`（可選）；動畫短（< 300ms）且不阻擋操作。
 
 ## 5. 完成定義（Definition of Done）
@@ -159,8 +167,10 @@ sudoku_pwa/
   `/sudoku_pwa/`。若改為自訂網域，於 CI 設定 `VITE_BASE_PATH=/`。
 - Pages 的來源必須是 **GitHub Actions**（由 `actions/deploy-pages` 部署），
   不是 `gh-pages` 分支。
-- `manifest.webmanifest` 的 `start_url`、`scope`、icons 路徑都依賴 `base`；
+- `manifest.webmanifest` 的 `start_url`、`scope`、`id`、icons 路徑都依賴 `base`；
   改動 `vite.config.js` 的 `base` 時要一起確認。
+- manifest `id` 是本 PWA 的安裝身分（`/sudoku_pwa/?app=sudoku-pwa`），**不要**改成
+  其他遊戲共用的值；同網域多個 PWA 要各自安裝就必須各自有唯一 `id` 與不重疊的 `scope`。
 - Service Worker 使用 `registerType: 'autoUpdate'`，舊快取由 `cleanupOutdatedCaches`
   清除；若改了快取策略，請在瀏覽器 DevTools → Application → Service Workers
   勾選 Update on reload 驗證。
@@ -171,9 +181,10 @@ sudoku_pwa/
 
 - **每日挑戰不一致**：生成流程任何一處用了 `Math.random` 都會破壞跨裝置一致性；
   seed 必須一路傳進 `generateSudoku` 與 `createPuzzle`。
-- **棋盤格線不明顯**：3×3 宮的粗線與格內細線要用不同粗細／顏色，
-  且外框不可被相鄰格子的 border 疊加蓋掉（用 `border-r-2` 於第 2、5 欄與
-  `border-b-2` 於第 2、5 列，並注意最後一列／欄不重複加框）。
+- **棋盤格線不明顯**：內線一律 1px，3×3 宮界線用較深顏色（`slate-500`）而非加粗；
+  外框用 2px，且外框不可被相鄰格子的 border 疊加蓋掉（注意最後一列／欄不重複加框）。
+- **玩家／題目顏色混淆**：題目維持黑色粗體、玩家填入用紅色（`text-red-600`）；
+  錯誤狀態除了紅色文字，必須加上紅底、紅點或外框，避免與玩家正常紅色數字混淆。
 - **手機點擊延遲／雙擊縮放**：棋盤與數字鍵盤加 `touch-action: manipulation`。
 - **錯誤高亮範圍**：衝突要同時標示「剛填入的格子」與造成衝突的既有格子，
   否則玩家不知道錯在哪。

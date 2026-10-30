@@ -1,7 +1,7 @@
 {
   "name": "sudoku-pwa",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "完全離線的 PWA 數獨遊戲：每日挑戰、三種難度、即時錯誤提示。",
   "scripts": {

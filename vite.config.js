@@ -34,7 +34,10 @@ export default defineConfig(({ command, isPreview }) => {
           description: '完全離線的 PWA 數獨：每日挑戰、三種難度、行列與九宮格即時錯誤提示。',
           lang: 'zh-Hant',
           dir: 'ltr',
-          id: base,
+          // 同一個 GitHub Pages 網域下掛了多個 PWA 時，瀏覽器靠 manifest id 辨識
+          // 「是否為同一個 App」。加上本 App 專屬的 query id，確保數獨可以與其他
+          // 遊戲各自安裝、各自出現在手機主畫面，不會被視為同一個 App。
+          id: `${base}?app=sudoku-pwa`,
           start_url: base,
           scope: base,
           display: 'standalone',

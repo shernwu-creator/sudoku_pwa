@@ -14,7 +14,7 @@ import { dailySeed, getTodayKey } from '../utils/date.js'
  *
  * 存檔格式（單一 key，內含兩個模式各自的進度）：
  *   sudoku:v1:game = {
- *     version: 1,
+ *     version: 2,
  *     activeMode: 'daily' | 'random',
  *     difficulty: 1 | 2 | 3,
  *     slots: { daily: record | null, random: record | null },
@@ -26,7 +26,9 @@ import { dailySeed, getTodayKey } from '../utils/date.js'
  */
 
 const STORAGE_KEY = 'sudoku:v1:game'
-const STORAGE_VERSION = 1
+// v2：每日挑戰改為「日期 + 難度」各自產生不同終盤，舊存檔直接失效重開，
+// 避免沿用舊版（三難度共用同一終盤）的每日進度。
+const STORAGE_VERSION = 2
 const DEFAULT_DIFFICULTY = 1
 const BOARD_SIZE = 9
 const MODES = ['daily', 'random']
@@ -163,8 +165,11 @@ function persistGame(game) {
 }
 
 function generateGame({ mode, difficulty, seed, dateKey = null }) {
-  const solution = generateSudoku(seed)
-  const puzzle = createPuzzle(solution, difficulty, seed)
+  // seed 再混入難度：同一天的三個難度各自是不同終盤與不同題目，
+  // 但同一天、同一難度在任何裝置仍會得到完全相同的題目。
+  const boardSeed = `${seed}:difficulty-${difficulty}`
+  const solution = generateSudoku(boardSeed)
+  const puzzle = createPuzzle(solution, difficulty, boardSeed)
   return {
     mode,
     difficulty,
@@ -278,6 +283,27 @@ export function useSudokuGame() {
     setSelected(null)
     setLastPlaced(null)
   }, [])
+
+  // 每日挑戰跨日自動換題：回到前景、視窗重新聚焦或每分鐘檢查一次本地日期。
+  // 只在使用者正處於「每日挑戰」時觸發；自由練習與其他模式不受影響。
+  useEffect(() => {
+    const checkDayRollover = () => {
+      const current = gameRef.current
+      if (current.mode !== 'daily' || current.dateKey === getTodayKey()) return
+      startGame(buildDailyGame(current.difficulty, getTodayKey()))
+    }
+    const handleVisibility = () => {
+      if (!document.hidden) checkDayRollover()
+    }
+    const intervalId = window.setInterval(checkDayRollover, 60_000)
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', checkDayRollover)
+    return () => {
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', checkDayRollover)
+    }
+  }, [startGame])
 
   // 點同一格不會取消選取（避免手殘多點一下就把選取弄掉）；取消選取交給 Esc
   const selectCell = useCallback((row, col) => {

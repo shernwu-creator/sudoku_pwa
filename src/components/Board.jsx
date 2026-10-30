@@ -4,13 +4,15 @@ import { cn } from '../utils/cn.js'
 const INDICES = [0, 1, 2, 3, 4, 5, 6, 7, 8]
 
 /**
- * 3×3 宮的粗線：欄 2/5 加右粗線、列 2/5 加下粗線；
+ * 棋盤格線一律 1px：3×3 宮的界線只用「較深的顏色」區隔，避免出現粗細不一。
  * 最右欄／最下列由棋盤外框負責，避免雙重邊框。
  */
 function cellBorderClass(row, col) {
   return cn(
-    col < 8 && (col === 2 || col === 5 ? 'border-r-2 border-slate-500' : 'border-r border-slate-300'),
-    row < 8 && (row === 2 || row === 5 ? 'border-b-2 border-slate-500' : 'border-b border-slate-300'),
+    col < 8 && 'border-r',
+    row < 8 && 'border-b',
+    col < 8 && (col === 2 || col === 5 ? 'border-r-slate-500' : 'border-r-slate-300'),
+    row < 8 && (row === 2 || row === 5 ? 'border-b-slate-500' : 'border-b-slate-300'),
   )
 }
 
@@ -85,8 +87,8 @@ function Board({ board, givens, selected, conflicts, lastPlaced, onSelect }) {
               : value === 0
                 ? 'text-slate-900'
                 : isGiven
-                  ? 'font-bold text-slate-900'
-                  : 'font-semibold text-brand-600'
+                  ? 'font-bold text-black'
+                  : 'font-semibold text-red-600'
 
             return (
               <button
