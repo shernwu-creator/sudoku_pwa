@@ -4,7 +4,9 @@ import {
   DIFFICULTY_ORDER,
   EMPTY,
   checkValidity,
+  countSolutions,
   createPuzzle,
+  generatePuzzle,
   generateSudoku,
   getConflicts,
   isComplete,
@@ -357,6 +359,118 @@ describe('isComplete', () => {
   })
 })
 
+/* ----------------------------- countSolutions ------------------------ */
+
+describe('countSolutions', () => {
+  it('完整合法盤面 → 1 個解', () => {
+    expect(isComplete(generateSudoku('count-full'))).toBe(true)
+    expect(countSolutions(generateSudoku('count-full'), 2)).toBe(1)
+  })
+
+  it('空盤面 → 至少 2 個解（limit 2）', () => {
+    const empty = Array.from({ length: SIZE }, () => new Array(SIZE).fill(EMPTY))
+    expect(countSolutions(empty, 2)).toBe(2)
+  })
+
+  it('題目若多解 → 回傳 2（達 limit）', () => {
+    // 只留少量提示，幾乎一定多解。
+    const puzzle = generateSudoku('count-multi').map((row, r) =>
+      row.map((value, c) => ((r * 9 + c) % 7 === 0 ? value : EMPTY)),
+    )
+    expect(countSolutions(puzzle, 2)).toBe(2)
+  })
+
+  it('格式不對 → 0，不拋錯', () => {
+    expect(countSolutions(null, 2)).toBe(0)
+    expect(countSolutions([[]], 2)).toBe(0)
+  })
+})
+
+/* ------------------------------ generatePuzzle ----------------------- */
+
+describe('generatePuzzle（保證唯一解）', () => {
+  const seeds = [
+    'daily-2026-10-30',
+    'daily-2026-10-31',
+    'unique-seed-a',
+    'unique-seed-b',
+    'unique-seed-c',
+    'unique-seed-d',
+  ]
+
+  it('三難度都精確提示數、唯一解、題目與解答一致', () => {
+    for (const difficulty of DIFFICULTY_ORDER) {
+      for (const seed of seeds) {
+        const { solution, puzzle, unique, attempts } = generatePuzzle(seed, difficulty)
+        expect(unique).toBe(true)
+        expect(attempts).toBeGreaterThanOrEqual(1)
+        expect(countNonZero(puzzle)).toBe(DIFFICULTY[difficulty].clues)
+        expectValidSolution(solution)
+        expect(isComplete(solution)).toBe(true)
+        expect(countSolutions(puzzle, 2)).toBe(1)
+
+        let givensMatch = true
+        for (let r = 0; r < SIZE; r += 1) {
+          for (let c = 0; c < SIZE; c += 1) {
+            if (puzzle[r][c] !== EMPTY && puzzle[r][c] !== solution[r][c]) givensMatch = false
+          }
+        }
+        expect(givensMatch).toBe(true)
+      }
+    }
+  })
+
+  it('相同 seed + 難度可重現（每日挑戰跨裝置一致）', () => {
+    const first = generatePuzzle('daily-2026-10-30', 3)
+    const second = generatePuzzle('daily-2026-10-30', 3)
+    expect(first.puzzle).toEqual(second.puzzle)
+    expect(first.solution).toEqual(second.solution)
+    expect(first.seed).toBe(second.seed)
+  })
+
+  it('不同難度得到不同終盤與不同題目', () => {
+    const easy = generatePuzzle('daily-2026-10-30', 1)
+    const medium = generatePuzzle('daily-2026-10-30', 2)
+    const hard = generatePuzzle('daily-2026-10-30', 3)
+    const solutions = [easy, medium, hard].map(({ solution }) => solution.flat().join(''))
+    const puzzles = [easy, medium, hard].map(({ puzzle }) => puzzle.flat().join(''))
+    expect(new Set(solutions).size).toBe(3)
+    expect(new Set(puzzles).size).toBe(3)
+  })
+
+  it('舊版曾挖出多解的 seed 會自動重試成唯一解', () => {
+    // 這些 seed 在舊 createPuzzle（盲挖補足版）下會產生多解。
+    const regressionSeeds = ['test-seed-9', 'test-seed-12', 'test-seed-27', 'test-seed-29', 'test-seed-33']
+    for (const seed of regressionSeeds) {
+      const { puzzle, unique } = generatePuzzle(seed, 3)
+      expect(unique).toBe(true)
+      expect(countSolutions(puzzle, 2)).toBe(1)
+    }
+  })
+
+  it('30 組 hard seed 全部唯一解（回歸抽樣）', () => {
+    for (let i = 0; i < 30; i += 1) {
+      const { puzzle, unique } = generatePuzzle(`hard-regression-${i}`, 3)
+      expect(unique).toBe(true)
+      expect(countSolutions(puzzle, 2)).toBe(1)
+    }
+  })
+
+  it('maxAttempts=1 時仍回傳可玩的保底題目（極端案例）', () => {
+    const fallback = generatePuzzle('test-seed-9', 3, { maxAttempts: 1 })
+    expect(fallback.unique).toBe(false)
+    expect(countNonZero(fallback.puzzle)).toBe(DIFFICULTY[3].clues)
+    expect(countSolutions(fallback.puzzle, 2)).toBeGreaterThanOrEqual(2)
+    expect(isComplete(fallback.solution)).toBe(true)
+  })
+
+  it('非法難度丟 RangeError', () => {
+    expect(() => generatePuzzle('x', 4)).toThrow(RangeError)
+    expect(() => generatePuzzle('x', 0)).toThrow(RangeError)
+    expect(() => generatePuzzle('x', '1')).toThrow(RangeError)
+  })
+})
+
 /* --------------------------------- 效能 ------------------------------ */
 
 describe('效能', () => {
@@ -374,6 +488,21 @@ describe('效能', () => {
     console.log(
       `[perf] generateSudoku + createPuzzle(1,2,3) 總耗時: ${elapsed.toFixed(1)}ms`,
     )
+    expect(elapsed).toBeLessThan(3000)
+  })
+
+  it('generatePuzzle 三難度總時間 < 3000ms（含唯一解重試）', () => {
+    const start = performance.now()
+
+    for (let i = 0; i < 10; i += 1) {
+      for (const difficulty of DIFFICULTY_ORDER) {
+        generatePuzzle(`perf-generate-${i}`, difficulty)
+      }
+    }
+
+    const elapsed = performance.now() - start
+    // eslint-disable-next-line no-console
+    console.log(`[perf] generatePuzzle(10 seeds × 3 難度) 總耗時: ${elapsed.toFixed(1)}ms`)
     expect(elapsed).toBeLessThan(3000)
   })
 })

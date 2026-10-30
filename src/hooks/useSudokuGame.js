@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DIFFICULTY_ORDER,
   EMPTY,
-  createPuzzle,
-  generateSudoku,
+  generatePuzzle,
   getConflicts,
   isComplete,
 } from '../utils/sudokuLogic.js'
@@ -14,7 +13,7 @@ import { dailySeed, getTodayKey } from '../utils/date.js'
  *
  * 存檔格式（單一 key，內含兩個模式各自的進度）：
  *   sudoku:v1:game = {
- *     version: 2,
+ *     version: 3,
  *     activeMode: 'daily' | 'random',
  *     difficulty: 1 | 2 | 3,
  *     slots: { daily: record | null, random: record | null },
@@ -26,9 +25,9 @@ import { dailySeed, getTodayKey } from '../utils/date.js'
  */
 
 const STORAGE_KEY = 'sudoku:v1:game'
-// v2：每日挑戰改為「日期 + 難度」各自產生不同終盤，舊存檔直接失效重開，
-// 避免沿用舊版（三難度共用同一終盤）的每日進度。
-const STORAGE_VERSION = 2
+// v2：每日挑戰改為「日期 + 難度」各自產生不同終盤。
+// v3：改用 generatePuzzle() 保證每題唯一解；舊存檔（可能含多解題目）直接失效重開。
+const STORAGE_VERSION = 3
 const DEFAULT_DIFFICULTY = 1
 const BOARD_SIZE = 9
 const MODES = ['daily', 'random']
@@ -165,11 +164,10 @@ function persistGame(game) {
 }
 
 function generateGame({ mode, difficulty, seed, dateKey = null }) {
-  // seed 再混入難度：同一天的三個難度各自是不同終盤與不同題目，
-  // 但同一天、同一難度在任何裝置仍會得到完全相同的題目。
-  const boardSeed = `${seed}:difficulty-${difficulty}`
-  const solution = generateSudoku(boardSeed)
-  const puzzle = createPuzzle(solution, difficulty, boardSeed)
+  // generatePuzzle 會把難度混入 seed，並反覆重試直到題目保證唯一解：
+  // 同一天的三個難度各自是不同終盤與不同題目，且同一天、同一難度
+  // 在任何裝置仍會得到完全相同的題目。
+  const { solution, puzzle } = generatePuzzle(seed, difficulty)
   return {
     mode,
     difficulty,

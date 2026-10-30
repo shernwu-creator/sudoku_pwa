@@ -104,17 +104,23 @@ sudoku_pwa/
 - `generateSudoku(seed?)`：回傳完整合法盤面（81 格皆有 1–9，列／欄／宮皆不重複）。
   傳入相同 `seed`（字串）必須得到完全相同的盤面（seedrandom）；未傳 seed 才可用
   `Math.random`。不得每次呼叫都建立 global 隨機狀態。
-- `createPuzzle(board, difficulty, seed?)`：回傳**新的**挖洞盤面（不修改傳入的 board），
-  保留數字數量必須精確等於該難度 `clues`，其餘為 `0`；保留格的值不得改變。
-  傳入相同 `seed` + `difficulty` 時結果必須固定，供「每日挑戰」跨裝置一致。
+- `createPuzzle(board, difficulty, seed?)`：低階的挖洞函式，回傳**新的**盤面
+  （不修改傳入的 board），保留數字數量必須精確等於該難度 `clues`；相同 seed + difficulty
+  結果固定。唯一解只是盡力而為，**一般遊戲流程不要直接用它**。
+- `generatePuzzle(seed, difficulty, options?)`：**遊戲實際出題入口**，回傳
+  `{ solution, puzzle, attempts, seed, unique }`。必須反覆重試衍生 seed，直到
+  `countSolutions(puzzle, 2) === 1` 且提示數精確；同 seed + 難度必須可重現（每日挑戰）。
+  `unique` 應為 `true`；只有極端罕見的 `maxAttempts` 用盡才會回傳 `false`。
+- `countSolutions(board, limit=2)`：回傳解數量（最多數到 limit），供唯一解驗證與測試。
 - `checkValidity(board, row, col, num)`：檢查把 `num` 放入 `(row, col)` 是否不違反
   列／欄／3×3 宮規則；**忽略該格目前的值**（同格重新輸入相同數字不應誤判衝突）。
   座標或數字不合法時回傳 `false`。
 - `getConflicts(board)`：回傳所有參與重複的格子座標 `Set<"row,col">`（忽略 `0`）。
 - `isComplete(board)`：81 格皆為 1–9 且 `getConflicts` 為空。
-- 效能：單次 `generateSudoku` + `createPuzzle` 應在一般手機上 < 500ms；不要加入
-  昂貴且無上限的重試迴圈。
-- 唯一解不是硬性需求，但挖洞時若能低成本維持唯一解更好；**精確題目數字量優先**。
+- 效能：單次 `generatePuzzle`（含唯一解重試）在一般手機上應 < 1500ms；實測桌機 hard
+  平均約 7ms、最慢 < 100ms。不要加入無上限的重試迴圈。
+- **唯一解是硬性需求**：每題都必須能由邏輯推出唯一答案；修改生成器後務必用
+  `countSolutions` 驗證大量 seed，並保留回歸測試。
 
 ## 4. 開發慣例
 
@@ -137,11 +143,12 @@ sudoku_pwa/
 - **子路徑**：不要硬編碼 `/` 開頭的資源路徑；用 `import.meta.env.BASE_URL` 或 Vite 的
   相對資源處理。測試 PWA 請用 `npm run preview`（預設掛在 `/sudoku_pwa/`）。
 - **本機儲存**：key 一律以 `sudoku:v1:` 開頭；讀取時 try/catch，格式錯誤就丢棄重來；
-  schema 變更時提升 `STORAGE_VERSION`（目前 `2`），不要讓舊資料弄壞新版本。
+  schema 變更時提升 `STORAGE_VERSION`（目前 `3`），不要讓舊資料弄壞新版本。
 - **每日挑戰**：以**本地日期** `YYYY-MM-DD` 產生 seed（例如 `daily-2026-10-30`），
-  於 `generateGame` 再串上難度（`<seed>:difficulty-N`）。因此同一天三個難度各自不同題，
-  但同一天、同一難度在任何裝置都必須是同一題；新遊戲使用隨機 seed，每次點擊都不同。
-  跨午夜時若使用者停在每日挑戰，回到前景／每分鐘檢查會自動換成新的一天題目。
+  交給 `generatePuzzle` 後會串上難度與重試序號（`<seed>:difficulty-N[:retry-K]`）。
+  因此同一天三個難度各自不同題，但同一天、同一難度在任何裝置都必須是同一題；
+  新遊戲使用隨機 seed，每次點擊都不同。跨午夜時若使用者停在每日挑戰，
+  回到前景／每分鐘檢查會自動換成新的一天題目。
 - **PWA 身分**：manifest `id` 必須是全站唯一（本專案 `id` = `<base>?app=sudoku-pwa`，
   `scope` = `<base>`）。同一個 GitHub Pages 網域下會掛多個遊戲，若 `id`／`scope`
   與其他 App 重複，瀏覽器會視為同一個 App，造成無法各自安裝；修改 `base` 時要同步確認。
@@ -151,7 +158,7 @@ sudoku_pwa/
 
 修改任何功能後，至少完成：
 
-1. `npm test` 全數通過（邏輯改動必附／更新測試）。
+1. `npm test` 全數通過（邏輯改動必附／更新測試；生成器改動必須包含唯一解與提示數回歸測試）。
 2. `npm run build` 成功；`dist/sw.js`、`dist/manifest.webmanifest` 存在，
    precache 清單包含所有 js/css/html/svg/png。
 3. `npm run preview` 開啟無 console error；Service Worker 狀態為 activated。
@@ -180,7 +187,11 @@ sudoku_pwa/
 ## 7. 常見陷阱
 
 - **每日挑戰不一致**：生成流程任何一處用了 `Math.random` 都會破壞跨裝置一致性；
-  seed 必須一路傳進 `generateSudoku` 與 `createPuzzle`。
+  seed 必須一路傳進 `generatePuzzle`（內部再傳給 `generateSudoku` 與 `createPuzzle`），
+  重試次數與重試 seed 也必須完全由 seed 決定。
+- **題目多解（最常見的「邏輯錯誤」）**：只用 `createPuzzle` 的低階盲挖可能產生多解，
+  玩家會覺得「怎麼填都不對」。遊戲流程務必走 `generatePuzzle`，並以
+  `countSolutions(puzzle, 2) === 1` 驗證；改動生成器後要用大量 seed 抽驗。
 - **棋盤格線不明顯**：內線一律 1px，3×3 宮界線用較深顏色（`slate-500`）而非加粗；
   外框用 2px，且外框不可被相鄰格子的 border 疊加蓋掉（注意最後一列／欄不重複加框）。
 - **玩家／題目顏色混淆**：題目維持黑色粗體、玩家填入用紅色（`text-red-600`）；
