@@ -1,0 +1,32 @@
+{
+  "name": "sudoku-pwa",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "完全離線的 PWA 數獨遊戲：每日挑戰、三種難度、即時錯誤提示。",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "generate:icons": "node scripts/generate-icons.mjs",
+    "codegraph:sync": "codegraph sync"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "seedrandom": "^3.0.5",
+    "tailwind-merge": "^2.6.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.2",
+    "autoprefixer": "^10.6.2",
+    "postcss": "^8.5.32",
+    "tailwindcss": "^3.4.19",
+    "vite": "^8.3.5",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.0.5"
+  }
+}

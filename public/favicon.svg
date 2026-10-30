@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="數獨 Sudoku">
+  <rect width="64" height="64" rx="14" fill="#4338ca" />
+  <rect x="9" y="9" width="46" height="46" rx="5" fill="#eef2ff" />
+  <g stroke="#c7d2fe" stroke-width="0.9">
+    <path d="M24.33 9v46M39.67 9v46M9 24.33h46M9 39.67h46" />
+  </g>
+  <g stroke="#4338ca" stroke-width="2.2" stroke-linecap="round">
+    <path d="M24.33 9v46M39.67 9v46M9 24.33h46M9 39.67h46" />
+  </g>
+  <g fill="#4338ca">
+    <rect x="11.6" y="11.6" width="10.1" height="10.1" rx="1.6" />
+    <rect x="26.9" y="26.9" width="10.1" height="10.1" rx="1.6" />
+    <rect x="42.3" y="42.3" width="10.1" height="10.1" rx="1.6" />
+    <rect x="11.6" y="42.3" width="10.1" height="10.1" rx="1.6" />
+  </g>
+  <g fill="#a5b4fc">
+    <rect x="42.3" y="11.6" width="10.1" height="10.1" rx="1.6" />
+    <rect x="26.9" y="42.3" width="10.1" height="10.1" rx="1.6" />
+  </g>
+</svg>

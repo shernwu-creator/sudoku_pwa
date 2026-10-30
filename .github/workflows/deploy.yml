@@ -1,0 +1,70 @@
+name: Deploy Sudoku PWA to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時只保留一次部署，避免兩個 push 互相覆蓋
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run logic tests
+        run: npm test
+
+      - name: Build (GitHub Pages subpath)
+        env:
+          VITE_BASE_PATH: /sudoku_pwa/
+        run: npm run build
+
+      - name: Verify PWA artifacts
+        run: |
+          test -f dist/index.html
+          test -f dist/sw.js
+          test -f dist/manifest.webmanifest
+          test -f dist/pwa-192x192.png
+          echo "dist size: $(du -sh dist | cut -f1)"
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          # 若 repo 尚未啟用 Pages，這裡會自動以 GitHub Actions 作為來源建立網站
+          enablement: true
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
