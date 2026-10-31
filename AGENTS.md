@@ -79,12 +79,14 @@ sudoku_pwa/
 │  ├─ components/
 │  │  ├─ Header.jsx              # 日期、難度選單、新遊戲／每日挑戰、計時器
 │  │  ├─ Board.jsx               # 9×9 棋盤、選取/同列/同欄/同數字/錯誤高亮
-│  │  └─ NumberPad.jsx           # 手機數字鍵盤（1–9 + 清除）
+│  │  └─ NumberPad.jsx           # 手機數字鍵盤（1–9 + 清除；填滿 9 個仍可按）
 │  ├─ hooks/
-│  │  └─ useSudokuGame.js        # 遊戲狀態機、計時、localStorage 自動存檔
+│  │  └─ useSudokuGame.js        # 遊戲狀態機、計時、跨日換題、localStorage 自動存檔
 │  └─ utils/
 │     ├─ sudokuLogic.js          # 純邏輯（零 React 依賴，可單獨測試）
 │     ├─ sudokuLogic.test.js     # Vitest 單元測試
+│     ├─ gameSession.js          # 跨日換題、計時暫停等純規則
+│     ├─ gameSession.test.js     # Vitest 單元測試
 │     ├─ date.js                 # 本地日期 key（每日挑戰種子）
 │     └─ cn.js                   # clsx + tailwind-merge
 ├─ scripts/generate-icons.mjs    # 純 Node.js 產生 PWA 圖示
@@ -132,12 +134,17 @@ sudoku_pwa/
 - **樣式**：只用 Tailwind utility；動態合併 class 一律用 `cn()`（`clsx` + `tailwind-merge`）。
   不新增第二套 CSS 架構；品牌色用 `brand-*`，勿硬編碼色碼（圖示腳本除外）。
 - **元件分割**：`App.jsx` 只負責組合與全域事件；棋盤渲染歸 `Board.jsx`；
-  輸入面板歸 `NumberPad.jsx`；遊戲狀態機集中在 `useSudokuGame.js`。
+  輸入面板歸 `NumberPad.jsx`；遊戲狀態機集中在 `useSudokuGame.js`；
+  可獨立測試的跨日／計時規則放 `utils/gameSession.js`，不要塞回 hook。
+- **數字鍵盤**：某數字在盤面達到 9 個時只做視覺淡化＋刪除線，**不可 `disabled`**，
+  否則玩家填錯後無法再按同一數字修改；只有「沒有可輸入選取格」時才整組禁用。
 - **可存取性**：格子用 `<button>`，提供 `aria-label`（列、欄、數字）與 `aria-selected`；
   錯誤／選取不可只靠顏色（粗體、外框、圖示輔助）；觸控目標至少 44×44px；
   不要停用瀏覽器縮放（`user-scalable=no` 禁止使用）。
 - **鍵盤**：實體鍵盤 1–9 填入、Backspace/Delete/0 清除、方向鍵移動選取、Esc 取消選取。
-  事件掛在 `window` 時要忽略 `<select>`、`<input>`、`<textarea>` 上的按鍵。
+  清除鍵只有在 `selected !== null` 時才 `preventDefault()`，沒有選取時要保留瀏覽器／
+  系統預設行為（例如返回手勢）。事件掛在 `window` 時要忽略 `<select>`、`<input>`、
+  `<textarea>` 上的按鍵。
 - **離線**：禁止外部字型、CDN、遠端圖片或 API。新資源放 `public/` 或 `import` 進 bundle，
   確保被 Workbox 的 `globPatterns` 預快取。新增檔案類型時同步更新 `vite.config.js`。
 - **子路徑**：不要硬編碼 `/` 開頭的資源路徑；用 `import.meta.env.BASE_URL` 或 Vite 的
@@ -147,8 +154,12 @@ sudoku_pwa/
 - **每日挑戰**：以**本地日期** `YYYY-MM-DD` 產生 seed（例如 `daily-2026-10-30`），
   交給 `generatePuzzle` 後會串上難度與重試序號（`<seed>:difficulty-N[:retry-K]`）。
   因此同一天三個難度各自不同題，但同一天、同一難度在任何裝置都必須是同一題；
-  新遊戲使用隨機 seed，每次點擊都不同。跨午夜時若使用者停在每日挑戰，
-  回到前景／每分鐘檢查會自動換成新的一天題目。
+  新遊戲使用隨機 seed，每次點擊都不同。跨午夜時若題目進行中且有進度
+  （`elapsed > 0` 或盤面已修改）**不要自動換題**，讓玩家解完昨天的題；只有空盤
+  （0 秒、未動盤面）或 `won` 才換成今天的題目（規則在 `gameSession.js`）。
+- **計時暫停**：`document.hidden === true` 時把 `baseRef.current.at` 設為 `null`
+  定格秒數；回到前景才重新設定基準點。不要在背景期間累加時間，也不要把
+  `at` 保持為舊時間戳。
 - **PWA 身分**：manifest `id` 必須是全站唯一（本專案 `id` = `<base>?app=sudoku-pwa`，
   `scope` = `<base>`）。同一個 GitHub Pages 網域下會掛多個遊戲，若 `id`／`scope`
   與其他 App 重複，瀏覽器會視為同一個 App，造成無法各自安裝；修改 `base` 時要同步確認。
@@ -200,6 +211,10 @@ sudoku_pwa/
 - **錯誤高亮範圍**：衝突要同時標示「剛填入的格子」與造成衝突的既有格子，
   否則玩家不知道錯在哪。
 - **localStorage 還原**：`board`、`puzzle`、`solution` 都要存；只存 puzzle 會讓
-  已填進度消失。還原前驗證維度與日期（每日挑戰跨日要換題）。
+  已填進度消失。還原前驗證維度與日期；每日挑戰跨日時要依「是否有進度」決定保留或換題。
+- **背景計時**：若只把 `base.at` 停在舊值，分頁在背景的時間還是會被算進去；
+  進入背景必須定格（`at = null`），回前景再以新時間戳續算。
+- **清除鍵攔截**：不要在沒有選取格子時 `preventDefault()` Backspace/Delete，
+  否則會擋掉瀏覽器返回等預設快捷鍵。
 - **SW 在 dev 模式不存在**：看到 404 `/sw.js` 是正常的；請用 preview 驗證。
 - **base path 寫死**：`/favicon.svg` 在 Pages 子路徑會 404，必須用 `%BASE_URL%`。

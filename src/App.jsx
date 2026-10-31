@@ -77,6 +77,8 @@ export default function App() {
         return
       }
       if (key === '0' || key === 'Backspace' || key === 'Delete') {
+        // 沒有選取任何格子時不要攔截預設行為（例如瀏覽器/系統的返回快捷鍵）
+        if (!selected) return
         event.preventDefault()
         erase()
         return
@@ -108,7 +110,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isWinDialogOpen, dismissWin, inputNumber, erase, moveSelection, clearSelection])
+  }, [isWinDialogOpen, selected, dismissWin, inputNumber, erase, moveSelection, clearSelection])
 
   return (
     <div className="flex min-h-app w-full justify-center overflow-x-hidden bg-slate-100 px-2 pb-safe pt-safe sm:px-4">

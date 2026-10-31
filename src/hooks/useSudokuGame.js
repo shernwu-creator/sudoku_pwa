@@ -7,6 +7,13 @@ import {
   isComplete,
 } from '../utils/sudokuLogic.js'
 import { dailySeed, getTodayKey } from '../utils/date.js'
+import {
+  freezeElapsed,
+  isPristineBoard,
+  readElapsed,
+  resumeElapsed,
+  shouldAutoRollover,
+} from '../utils/gameSession.js'
 
 /**
  * 遊戲狀態機：出題、計時、輸入、勝負、localStorage 自動存檔／還原。
@@ -85,18 +92,23 @@ function readStore() {
 
 /**
  * 把存檔記錄還原成遊戲狀態；任何一項驗證失敗就回 null（安全重置）。
+ *
+ * 每日挑戰預設允許還原「昨天但仍有進度」的題目，讓玩家跨日後（含重新整理）
+ * 仍能把昨天的題目解完；只有空盤或已完成才會被拒絕，改開今天的題目。
+ * 明確按下「每日挑戰」時會傳入 `allowStaleDaily: false`，一律切到今天的題目。
+ *
  * @param {unknown} record
  * @param {string} todayKey
+ * @param {{ allowStaleDaily?: boolean }} [options]
  * @returns {object | null}
  */
-function restoreRecord(record, todayKey) {
+function restoreRecord(record, todayKey, { allowStaleDaily = true } = {}) {
   if (!isPlainObject(record)) return null
 
   const { mode, difficulty, seed, dateKey, solution, puzzle, board } = record
   if (!MODES.includes(mode)) return null
   if (!isDifficulty(difficulty)) return null
   if (typeof seed !== 'string' || seed.length === 0) return null
-  if (mode === 'daily' && dateKey !== todayKey) return null
   if (!isFullSolution(solution) || !isBoardOfIntegers(puzzle) || !isBoardOfIntegers(board)) {
     return null
   }
@@ -115,6 +127,13 @@ function restoreRecord(record, todayKey) {
       : 0
   // 狀態一律由盤面重新推導，避免存檔瞬間的競態留下錯誤的 status
   const status = isComplete(board) ? 'won' : 'playing'
+
+  // 跨日的每日挑戰：只保留「進行中且有進度」的題目。
+  // 空盤（0 秒、未動盤面）或已完成都直接換成今天的題目。
+  if (mode === 'daily' && dateKey !== todayKey) {
+    const hasProgress = status === 'playing' && (elapsed > 0 || !isPristineBoard(board, puzzle))
+    if (!allowStaleDaily || !hasProgress) return null
+  }
 
   return {
     mode,
@@ -221,8 +240,12 @@ export function useSudokuGame() {
   const selectedRef = useRef(selected)
   selectedRef.current = selected
 
-  // 計時基準：base.elapsed 是起算秒數，base.at 是起算時間點
-  const baseRef = useRef({ elapsed: game.elapsed, at: Date.now() })
+  // 計時基準：base.elapsed 是起算秒數，base.at 是起算時間點；
+  // base.at === null 表示暫停中（例如分頁進入背景）。
+  const baseRef = useRef({
+    elapsed: game.elapsed,
+    at: typeof document !== 'undefined' && document.hidden ? null : Date.now(),
+  })
   const popTokenRef = useRef(0)
 
   // 自動存檔（每次狀態變更；含每秒計時）
@@ -230,12 +253,37 @@ export function useSudokuGame() {
     persistGame(game)
   }, [game])
 
-  // 計時器：用時間戳換算，分頁被瀏覽器節流時也不會少算
+  // 計時暫停：分頁進入背景時定格秒數，回到前景再重新設定基準點，
+  // 使背景時間不會被計入遊戲時間。
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const base = baseRef.current
+      if (document.hidden) {
+        baseRef.current = freezeElapsed(base)
+        return
+      }
+      if (base.at === null && gameRef.current.status === 'playing') {
+        baseRef.current = resumeElapsed(base)
+      }
+    }
+
+    // 若載入時已在背景分頁，先暫停計時
+    if (typeof document !== 'undefined' && document.hidden) {
+      baseRef.current = freezeElapsed(baseRef.current)
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [])
+
+  // 計時器：用時間戳換算，分頁被瀏覽器節流時也不會少算；
+  // 暫停中（at === null）不更新。
   useEffect(() => {
     if (game.status !== 'playing') return undefined
     const intervalId = window.setInterval(() => {
       const base = baseRef.current
-      const elapsed = base.elapsed + Math.floor((Date.now() - base.at) / 1000)
+      if (base.at === null) return
+      const elapsed = readElapsed(base)
       setGame((previous) =>
         previous.status !== 'playing' || previous.elapsed === elapsed
           ? previous
@@ -269,25 +317,26 @@ export function useSudokuGame() {
   const selectedGiven = selected ? givens[selected.row][selected.col] : false
   const canInput = Boolean(selected) && !selectedGiven && game.status === 'playing'
 
-  const getLiveElapsed = useCallback(() => {
-    const base = baseRef.current
-    return base.elapsed + Math.floor((Date.now() - base.at) / 1000)
-  }, [])
+  const getLiveElapsed = useCallback(() => readElapsed(baseRef.current), [])
 
   /** 換一局（也會重置計時基準與選取） */
   const startGame = useCallback((nextGame) => {
-    baseRef.current = { elapsed: nextGame.elapsed, at: Date.now() }
+    baseRef.current = {
+      elapsed: nextGame.elapsed,
+      at: typeof document !== 'undefined' && document.hidden ? null : Date.now(),
+    }
     setGame(nextGame)
     setSelected(null)
     setLastPlaced(null)
   }, [])
 
   // 每日挑戰跨日自動換題：回到前景、視窗重新聚焦或每分鐘檢查一次本地日期。
-  // 只在使用者正處於「每日挑戰」時觸發；自由練習與其他模式不受影響。
+  // 只在使用者正處於「每日挑戰」時觸發；自由練習不受影響。
+  // 進行中且有進度（已計時或已動盤面）的昨日題目會保留，讓玩家解完。
   useEffect(() => {
     const checkDayRollover = () => {
       const current = gameRef.current
-      if (current.mode !== 'daily' || current.dateKey === getTodayKey()) return
+      if (!shouldAutoRollover(current, getTodayKey())) return
       startGame(buildDailyGame(current.difficulty, getTodayKey()))
     }
     const handleVisibility = () => {
@@ -404,7 +453,8 @@ export function useSudokuGame() {
     }
 
     const store = readStore()
-    const restored = restoreRecord(store?.slots?.daily, todayKey)
+    // 使用者明確按「每日挑戰」→ 一律切到今天的題目，不還原昨天的舊進度。
+    const restored = restoreRecord(store?.slots?.daily, todayKey, { allowStaleDaily: false })
     if (restored) {
       // 今天的每日挑戰已完成 → 點按鈕直接重玩，不要停在已完成的盤面
       startGame(

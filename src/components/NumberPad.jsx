@@ -24,7 +24,8 @@ function EraseIcon() {
 
 /**
  * 手機用數字鍵盤：1–5 / 6–9+清除，兩列五欄。
- * 沒選取可輸入的格子時整組禁用；數字填滿 9 個後淡化並禁用。
+ * 沒選取可輸入的格子時整組禁用；數字填滿 9 個後只淡化＋刪除線，
+ * 仍保持可按，讓填錯的玩家可以再按同一數字修改其他格子。
  *
  * @param {object} props
  * @param {(number: number) => void} props.onInput
@@ -43,7 +44,8 @@ function NumberPad({ onInput, onErase, disabled, remaining }) {
         {NUMBERS.map((number) => {
           const left = remaining?.[number] ?? 9
           const isFinished = left === 0
-          const isDisabled = disabled || isFinished
+          // 達到 9 個只做視覺提示，不真正 disabled；仍可點擊修改。
+          const isDisabled = disabled
 
           return (
             <button
@@ -52,7 +54,9 @@ function NumberPad({ onInput, onErase, disabled, remaining }) {
               disabled={isDisabled}
               onClick={() => onInput(number)}
               aria-label={
-                isFinished ? `數字 ${number} 已全部填入` : `填入數字 ${number}，還剩 ${left} 個`
+                isFinished
+                  ? `填入數字 ${number}（盤面已有 9 個，仍可修改）`
+                  : `填入數字 ${number}，還剩 ${left} 個`
               }
               className={cn(
                 'relative flex h-12 min-w-0 items-center justify-center rounded-xl',
